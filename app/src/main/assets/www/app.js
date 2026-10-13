@@ -1019,7 +1019,7 @@ function renderSettings() {
       <p class="muted small">How far you got into each past broadcast, the Continue list and your watch time. Kept on this phone only.</p>
       <button class="btn" id="set-clear">Clear watch history</button></div>
     <div class="panel"><h3>About</h3>
-      <p class="muted small">Twitch Pocket ${esc(N ? N.version() : '')}. Unofficial: not affiliated with or endorsed by Twitch.</p></div>`;
+      <p class="muted small">Lurk ${esc(N ? N.version() : '')}. Unofficial: not affiliated with or endorsed by Twitch.</p></div>`;
 }
 $('settings-body').addEventListener('change', (e) => {
   const el = e.target;

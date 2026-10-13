@@ -1,4 +1,4 @@
-package com.brownaye.twitchpocket;
+package com.brownaye.lurk;
 
 import android.app.job.JobInfo;
 import android.app.job.JobParameters;

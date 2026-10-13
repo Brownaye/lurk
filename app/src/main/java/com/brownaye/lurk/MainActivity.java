@@ -1,4 +1,4 @@
-package com.brownaye.twitchpocket;
+package com.brownaye.lurk;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;

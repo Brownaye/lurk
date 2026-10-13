@@ -1,4 +1,4 @@
-package com.brownaye.twitchpocket;
+package com.brownaye.lurk;
 
 import android.app.Notification;
 import android.app.PendingIntent;
@@ -13,7 +13,7 @@ import android.os.PowerManager;
 // Runs while something is playing, so Android keeps the app (and the sound) going with the screen off. It shows
 // the "now playing" notification with a Stop button, and holds the phone's CPU and Wi-Fi awake meanwhile.
 public class PlaybackService extends Service {
-    private static final String STOP = "com.brownaye.twitchpocket.STOP";
+    private static final String STOP = "com.brownaye.lurk.STOP";
     static volatile Runnable onStop; // set by the activity: stop the video
 
     private PowerManager.WakeLock wake;
@@ -32,12 +32,12 @@ public class PlaybackService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        wake = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "twitchpocket:playback");
+        wake = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "lurk:playback");
         wake.setReferenceCounted(false);
         wake.acquire(12 * 60 * 60 * 1000L);
         WifiManager wm = getApplicationContext().getSystemService(WifiManager.class);
         if (wm != null) {
-            wifi = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "twitchpocket:playback");
+            wifi = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "lurk:playback");
             wifi.setReferenceCounted(false);
             wifi.acquire();
         }
@@ -60,7 +60,7 @@ public class PlaybackService extends Service {
                 .setSmallIcon(R.drawable.ic_stat)
                 .setColor(0xFF9146FF)
                 .setContentTitle(what.isEmpty() ? "Playing" : what)
-                .setContentText("Twitch Pocket")
+                .setContentText("Lurk")
                 .setContentIntent(open)
                 .setOngoing(true)
                 .setCategory(Notification.CATEGORY_TRANSPORT)

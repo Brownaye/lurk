@@ -1,4 +1,4 @@
-package com.brownaye.twitchpocket;
+package com.brownaye.lurk;
 
 import android.Manifest;
 import android.app.Notification;

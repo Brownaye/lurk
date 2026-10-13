@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "twitch-android"
+rootProject.name = "lurk"
 include ':app'

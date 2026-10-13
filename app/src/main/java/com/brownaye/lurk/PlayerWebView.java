@@ -1,4 +1,4 @@
-package com.brownaye.twitchpocket;
+package com.brownaye.lurk;
 
 import android.content.Context;
 import android.view.View;

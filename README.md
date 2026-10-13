@@ -1,6 +1,6 @@
-# Twitch Pocket
+# Lurk
 
-An Android app for watching the channels you follow on Twitch: who is live, the stream, and chat. It is the phone
+An unofficial Android client for Twitch: the channels you follow, who is live, the stream, and chat. It is the phone
 companion to [Twitch Desktop](https://github.com/Brownaye/twitch-desktop) and signs in the same way.
 
 Unofficial. Not affiliated with or endorsed by Twitch.
@@ -48,11 +48,11 @@ Not there yet: reminders for scheduled streams.
 
 ## Install
 
-Download [twitch-pocket.apk](../../releases/latest/download/twitch-pocket.apk) on the phone and open it. Android
+Download [lurk.apk](../../releases/latest/download/lurk.apk) on the phone and open it. Android
 asks you to allow installing from this source the first time, because the app is not from the Play Store. Needs
 Android 11 or newer.
 
-With the phone plugged in to a computer instead: `adb install -r twitch-pocket.apk`.
+With the phone plugged in to a computer instead: `adb install -r lurk.apk`.
 
 There is no auto-update. To update, install the newer APK over the old one; your sign-in and history stay.
 
