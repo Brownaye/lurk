@@ -13,30 +13,38 @@ Unofficial. Not affiliated with or endorsed by Twitch.
   and the video fills the screen. "From the start" plays the recording of a live stream from 0:00.
 - **Chat.** Reads as you and lets you type when signed in. Shows Twitch emotes plus 7TV, BetterTTV and
   FrankerFaceZ emotes.
+- **Hearts.** Give a channel a heart and, when it goes live while you are watching something else, a card slides
+  in over the video for 10 seconds with a Switch now button. It waits a few minutes after they go live, so the
+  "starting soon" screen is over.
+- **Picture-in-picture.** Leave the app while watching and the video carries on in a small window.
+- **Sleep timer.** Stops the video after a while, or at the end of a past broadcast. The sound fades out first.
 - **Continue.** Past broadcasts you stopped partway through, and live streams you watched for a minute or more and
   then left (rejoin them, or catch up from where you left).
 - **VODs.** Past broadcasts from every channel you follow, by day, with your progress in each. Filter by channel
   or favourites, or show only what you have not watched.
 - **Schedule.** What the channels you follow have planned for the next 7 days.
-- **Channels.** Everyone you follow, when they were last live, your favourites, and your watch time for the week.
-- **Settings.** Account, the Live list, the player, and clearing your watch history.
+- **Channels.** Everyone you follow, when they were last live, your hearts and favourites, and your watch time for
+  the week.
 - **Sign in with Twitch.** Device code sign-in with a public client ID, so there is no secret in the app. The
   sign-in page opens inside the app, which also logs the player in, so your subscriptions apply.
 
-Not there yet: hearts, the sleep timer, picture-in-picture, schedule reminders, and alerts while the app is
-closed.
+Not there yet: alerts while the app is closed, schedule reminders, and sound with the screen off.
 
 ## Install
 
-Download `twitch-pocket.apk` from the [latest release](../../releases/latest) and open it on the phone, or with
-the phone plugged in:
+Download [twitch-pocket.apk](../../releases/latest/download/twitch-pocket.apk) on the phone and open it. Android
+asks you to allow installing from this source the first time, because the app is not from the Play Store. Needs
+Android 11 or newer.
 
-```
-adb install -r twitch-pocket.apk
-```
+With the phone plugged in to a computer instead: `adb install -r twitch-pocket.apk`.
 
-Needs Android 11 or newer. The APK is signed with a debug key, so Android asks you to allow installing from an
-unknown source, and an update only installs over a copy signed with the same key.
+There is no auto-update. To update, install the newer APK over the old one; your sign-in and history stay.
+
+## Privacy
+
+Your sign-in, hearts, favourites and watch history are kept in the app's private storage on the phone. The app
+talks to Twitch, and to 7TV, BetterTTV and FrankerFaceZ for chat emotes. There is no analytics, no account of
+its own and no server behind it.
 
 ## Build
 
@@ -47,6 +55,10 @@ echo "sdk.dir=/path/to/Android/Sdk" > local.properties
 gradle assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+A build of your own is signed with your own key, so it will not install over a release from here (uninstall that
+first). For a signed release build, put `storeFile`, `storePassword`, `keyAlias` and `keyPassword` in a
+`keystore.properties` file next to `build.gradle` and run `gradle assembleRelease`.
 
 ## How it is put together
 
@@ -59,9 +71,6 @@ A plain Java activity with two web views and no other dependencies:
 - `app/src/main/assets/www/data.js`: favourites and settings, watch history, past broadcasts and schedules.
 - `app/src/main/assets/www/chat.js`: chat over Twitch IRC, and emotes.
 - `app/src/main/assets/www/app.js`: the screens.
-
-Your sign-in, favourites and watch history are kept in the app's private storage on the phone. The app talks to Twitch, and to 7TV, BetterTTV and
-FrankerFaceZ for emotes. Nothing else.
 
 ## Licence
 

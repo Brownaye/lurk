@@ -11,9 +11,21 @@ prefs.settings = {
   showOffline: true,   // offline channels listed under the live ones
   pollSeconds: 60,     // how often the Live list is checked while the app is open
   cleanPlayer: true,   // hide Twitch's title bar and content warning over the video
+  pip: true,           // keep playing in a small window when leaving the app while watching
+  heartPopups: true,   // a card over the video when a channel with a heart goes live
+  heartWaitMinutes: 5, // how long after going live the card shows, to let a "starting soon" screen pass (0 = at once)
   ...(prefs.settings && typeof prefs.settings === 'object' ? prefs.settings : {}),
 };
 const savePrefs = () => store.set('prefs', prefs);
+// Hearts: channels whose going live shows a card over whatever else you are watching ("Switch now").
+prefs.hearts = Array.isArray(prefs.hearts) ? prefs.hearts : [];
+const isHeart = (login) => prefs.hearts.includes(login);
+function setHeart(login, on) {
+  const set = new Set(prefs.hearts);
+  if (on) set.add(login); else set.delete(login);
+  prefs.hearts = [...set];
+  savePrefs();
+}
 const isFav = (login) => prefs.favourites.includes(login);
 function setFav(login, on) {
   const set = new Set(prefs.favourites);

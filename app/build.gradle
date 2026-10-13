@@ -2,6 +2,11 @@ plugins {
     id 'com.android.application'
 }
 
+// Release signing: keystore.properties (not in the repo) names the keystore and its passwords.
+def keystoreFile = rootProject.file('keystore.properties')
+def keystore = new Properties()
+if (keystoreFile.exists()) keystoreFile.withInputStream { keystore.load(it) }
+
 android {
     namespace 'com.brownaye.twitchpocket'
     compileSdk 35
@@ -11,8 +16,28 @@ android {
         minSdk 30
         // 34, not 35: keeps the system bars outside the app's area without edge-to-edge inset handling.
         targetSdk 34
-        versionCode 10100
-        versionName '1.1.0'
+        versionCode 10200
+        versionName '1.2.0'
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreFile.exists()) {
+                storeFile file(keystore['storeFile'])
+                storePassword keystore['storePassword']
+                keyAlias keystore['keyAlias']
+                keyPassword keystore['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // -PidSuffix=.rc builds a copy that installs beside the real app, for trying a release build out.
+            if (project.hasProperty('idSuffix')) applicationIdSuffix project.property('idSuffix')
+            if (keystoreFile.exists()) signingConfig signingConfigs.release
+        }
     }
 
     compileOptions {

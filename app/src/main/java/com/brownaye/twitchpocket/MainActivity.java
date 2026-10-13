@@ -2,17 +2,28 @@ package com.brownaye.twitchpocket;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.PictureInPictureParams;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Outline;
+import android.graphics.Rect;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
+import android.util.Rational;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
@@ -25,6 +36,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -44,7 +56,9 @@ import java.util.concurrent.Executors;
 // One screen, two web views. "ui" is the app itself (assets/www: who is live, sign-in, chat). "player" shows
 // player.twitch.tv above it while a stream is on, and doubles as the browser for Twitch's sign-in page so that
 // logging in there also logs the player in (same cookies).
-// Portrait: player on top at 16:9, chat below. Landscape while watching: the player fills the screen.
+// Portrait: player on top at 16:9, chat below. Landscape while watching: the player fills the screen. Leaving the
+// app while watching shrinks it to a picture-in-picture window. The Hearts card (a channel with a heart went live)
+// and the sleep timer live here rather than in the pages, so they work over the video whichever way it is shown.
 public class MainActivity extends Activity {
     private static final int BG = Color.rgb(14, 14, 16);
     // Hides Twitch's own title bar and content warning card over the video, as the desktop app does.
@@ -69,11 +83,25 @@ public class MainActivity extends Activity {
     private boolean authMode;
     private String authUrl = "";
     private volatile boolean cleanPlayer = true;
+    private volatile boolean pipEnabled = true;
+    private volatile boolean resumed;
+    private volatile boolean inPip;
+
+    private LinearLayout heartCard;
+    private ImageView heartAvatar;
+    private TextView heartName;
+    private TextView heartSub;
+    private TextView heartLeft;
+    private String heartLogin = "";
+    private int heartSecs;
+    private final Runnable heartTick = this::heartCountdown;
+    private final Runnable sleepNow = this::sleep;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        WebView.setWebContentsDebuggingEnabled(true);
+        // Inspecting the pages over USB is for debug builds only: it would expose the sign-in to anyone with a cable.
+        WebView.setWebContentsDebuggingEnabled((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0);
 
         root = new FrameLayout(this);
         root.setBackgroundColor(BG);
@@ -92,6 +120,11 @@ public class MainActivity extends Activity {
 
         ui = buildUi();
         column.addView(ui, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        heartCard = buildHeartCard();
+        FrameLayout.LayoutParams hp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
+        hp.setMargins(dp(10), dp(10), dp(10), 0);
+        root.addView(heartCard, hp);
 
         setContentView(root);
         applyLayout();
@@ -187,6 +220,7 @@ public class MainActivity extends Activity {
                 customCallback = callback;
                 root.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                 column.setVisibility(View.GONE);
+                heartCard.bringToFront();
                 setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
                 immersive(true);
             }
@@ -210,6 +244,164 @@ public class MainActivity extends Activity {
         applyLayout();
     }
 
+    // ---------- hearts ----------
+    // "X is live" with a Switch now button and a countdown, top right over the video for 10 seconds.
+    private LinearLayout buildHeartCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(10), dp(8), dp(6), dp(8));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.argb(245, 21, 24, 33));
+        bg.setCornerRadius(dp(14));
+        bg.setStroke(dp(1), Color.argb(150, 255, 92, 138));
+        card.setBackground(bg);
+        card.setElevation(dp(8));
+        card.setVisibility(View.GONE);
+
+        heartAvatar = new ImageView(this);
+        heartAvatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        heartAvatar.setBackgroundColor(Color.rgb(38, 38, 44));
+        heartAvatar.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setOval(0, 0, view.getWidth(), view.getHeight());
+            }
+        });
+        heartAvatar.setClipToOutline(true);
+        card.addView(heartAvatar, new LinearLayout.LayoutParams(dp(36), dp(36)));
+
+        LinearLayout text = new LinearLayout(this);
+        text.setOrientation(LinearLayout.VERTICAL);
+        heartName = new TextView(this);
+        heartName.setTextColor(Color.rgb(255, 194, 211));
+        heartName.setTextSize(14);
+        heartName.setTypeface(Typeface.DEFAULT_BOLD);
+        heartName.setSingleLine(true);
+        heartName.setEllipsize(TextUtils.TruncateAt.END);
+        heartName.setMaxWidth(dp(170));
+        text.addView(heartName);
+        heartSub = new TextView(this);
+        heartSub.setTextColor(Color.rgb(173, 173, 184));
+        heartSub.setTextSize(12);
+        heartSub.setSingleLine(true);
+        heartSub.setEllipsize(TextUtils.TruncateAt.END);
+        heartSub.setMaxWidth(dp(170));
+        text.addView(heartSub);
+        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tp.setMargins(dp(9), 0, dp(9), 0);
+        card.addView(text, tp);
+
+        TextView go = new TextView(this);
+        go.setText("Switch now");
+        go.setTextColor(Color.WHITE);
+        go.setTextSize(13);
+        go.setTypeface(Typeface.DEFAULT_BOLD);
+        go.setPadding(dp(12), dp(8), dp(12), dp(8));
+        GradientDrawable gb = new GradientDrawable();
+        gb.setColor(Color.rgb(255, 92, 138));
+        gb.setCornerRadius(dp(9));
+        go.setBackground(gb);
+        go.setOnClickListener(v -> {
+            String login = heartLogin;
+            hideHeart(false);
+            js("window.__heartSwitch && window.__heartSwitch(" + JSONObject.quote(login) + ")");
+        });
+        card.addView(go);
+
+        heartLeft = new TextView(this);
+        heartLeft.setTextColor(Color.rgb(173, 173, 184));
+        heartLeft.setTextSize(13);
+        heartLeft.setTypeface(Typeface.DEFAULT_BOLD);
+        heartLeft.setGravity(Gravity.CENTER);
+        heartLeft.setOnClickListener(v -> hideHeart(true));
+        card.addView(heartLeft, new LinearLayout.LayoutParams(dp(38), dp(36)));
+        return card;
+    }
+
+    private void showHeart(String login, String display, String title, String avatar) {
+        if (!watching || authMode || inPip || !resumed) { js("window.__heartDone && window.__heartDone(false)"); return; }
+        main.removeCallbacks(heartTick);
+        heartLogin = login;
+        heartName.setText("♥ " + display + " is live");
+        heartSub.setText(title);
+        heartSub.setVisibility(title.isEmpty() ? View.GONE : View.VISIBLE);
+        heartAvatar.setImageDrawable(null);
+        if (avatar.startsWith("https://")) {
+            io.execute(() -> {
+                try (InputStream in = new URL(avatar).openStream()) {
+                    final Bitmap b = BitmapFactory.decodeStream(in);
+                    main.post(() -> { if (login.equals(heartLogin)) heartAvatar.setImageBitmap(b); });
+                } catch (Exception e) { /* no picture: the grey circle stays */ }
+            });
+        }
+        heartSecs = 10;
+        heartLeft.setText("10");
+        heartCard.bringToFront();
+        heartCard.animate().cancel();
+        heartCard.setVisibility(View.VISIBLE);
+        heartCard.setAlpha(0f);
+        heartCard.setTranslationX(dp(48));
+        heartCard.animate().alpha(1f).translationX(0f).setDuration(350).withEndAction(null).start();
+        main.postDelayed(heartTick, 1000);
+    }
+
+    private void heartCountdown() {
+        if (heartLogin.isEmpty()) return;
+        heartSecs--;
+        if (heartSecs <= 0) { hideHeart(true); return; }
+        heartLeft.setText(String.valueOf(heartSecs));
+        main.postDelayed(heartTick, 1000);
+    }
+
+    // tell: let the page know the card is gone, so the next one in the queue can show.
+    private void hideHeart(boolean tell) {
+        main.removeCallbacks(heartTick);
+        if (heartLogin.isEmpty()) return;
+        heartLogin = "";
+        heartCard.animate().alpha(0f).translationX(dp(48)).setDuration(250).withEndAction(() -> heartCard.setVisibility(View.GONE)).start();
+        if (tell) js("window.__heartDone && window.__heartDone(true)");
+    }
+
+    // ---------- sleep timer ----------
+    // Fades the sound out over 15 seconds, then stops the video and lets the screen go off.
+    private void sleep() {
+        if (!watching || authMode) return;
+        player.evaluateJavascript("(() => { const v = document.querySelector('video'); if (!v) return; const s = v.volume; let i = 0;"
+                + " const t = setInterval(() => { i++; v.volume = Math.max(0, s * (1 - i / 30));"
+                + " if (i >= 30) { clearInterval(t); v.pause(); v.volume = s; } }, 500); })()", null);
+        main.postDelayed(() -> js("window.__slept && window.__slept()"), 16000);
+    }
+
+    // ---------- picture-in-picture ----------
+    private PictureInPictureParams pipParams() {
+        PictureInPictureParams.Builder b = new PictureInPictureParams.Builder().setAspectRatio(new Rational(16, 9));
+        Rect r = new Rect();
+        if (playerBox.getGlobalVisibleRect(r) && !r.isEmpty()) b.setSourceRectHint(r);
+        if (Build.VERSION.SDK_INT >= 31) b.setAutoEnterEnabled(watching && pipEnabled && !authMode);
+        return b.build();
+    }
+
+    private void updatePip() {
+        try { setPictureInPictureParams(pipParams()); } catch (Exception e) { /* no picture-in-picture on this device */ }
+    }
+
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (Build.VERSION.SDK_INT < 31 && watching && pipEnabled && !authMode) {
+            try { enterPictureInPictureMode(pipParams()); } catch (Exception e) { /* not allowed right now */ }
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean in, Configuration c) {
+        super.onPictureInPictureModeChanged(in, c);
+        inPip = in;
+        if (in) hideHeart(true);
+        applyLayout();
+    }
+
     // ---------- layout ----------
     private int dp(int v) {
         return Math.round(v * getResources().getDisplayMetrics().density);
@@ -217,8 +409,8 @@ public class MainActivity extends Activity {
 
     private void applyLayout() {
         boolean land = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
-        boolean full = watching && land && !authMode;
-        authBar.setVisibility(authMode ? View.VISIBLE : View.GONE);
+        boolean full = watching && (land || inPip) && !authMode;
+        authBar.setVisibility(authMode && !inPip ? View.VISIBLE : View.GONE);
         playerBox.setVisibility(watching || authMode ? View.VISIBLE : View.GONE);
         LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) playerBox.getLayoutParams();
         if (authMode || full) {
@@ -230,10 +422,11 @@ public class MainActivity extends Activity {
         }
         playerBox.setLayoutParams(lp);
         ui.setVisibility(authMode || full ? View.GONE : View.VISIBLE);
-        if (customView == null) immersive(full);
+        if (customView == null) immersive(full && !inPip);
         if (watching) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         js("window.__layout && window.__layout(" + (full ? "true" : "false") + ")");
+        playerBox.post(this::updatePip);
     }
 
     private void immersive(boolean on) {
@@ -275,6 +468,7 @@ public class MainActivity extends Activity {
 
     private void stop() {
         hideCustomView();
+        hideHeart(true);
         watching = false;
         if (!authMode) player.loadUrl("about:blank");
         applyLayout();
@@ -309,21 +503,40 @@ public class MainActivity extends Activity {
         ui.evaluateJavascript("(window.__back && window.__back()) ? 1 : 0", v -> { if (!"1".equals(v)) moveTaskToBack(true); });
     }
 
+    // Shrinking to picture-in-picture also pauses the activity: the video carries on. It stops when the app is
+    // really out of sight (onStop: sent to the background, the small window closed, the screen off).
     @Override
     protected void onPause() {
         super.onPause();
+        resumed = false;
+        if (!isInPictureInPictureMode()) player.onPause();
+        js("window.__pause && window.__pause(" + (isInPictureInPictureMode() ? "true" : "false") + ")");
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
         player.onPause();
+        js("window.__pause && window.__pause(false)");
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (isInPictureInPictureMode()) player.onResume();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
         player.onResume();
         js("window.__resume && window.__resume()");
     }
 
     @Override
     protected void onDestroy() {
+        main.removeCallbacksAndMessages(null);
         io.shutdownNow();
         player.destroy();
         ui.destroy();
@@ -427,6 +640,42 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void setClean(boolean on) {
             cleanPlayer = on;
+        }
+
+        // Settings > Player: keep playing in a small window when leaving the app.
+        @JavascriptInterface
+        public void setPip(boolean on) {
+            pipEnabled = on;
+            main.post(MainActivity.this::updatePip);
+        }
+
+        // Whether a card over the video would be seen right now: something is on, in front, at full size.
+        @JavascriptInterface
+        public boolean playerInSight() {
+            return watching && !authMode && resumed && !inPip;
+        }
+
+        // The Hearts card: {login, display, title, avatar}. When it goes away the page gets __heartDone(shown),
+        // or __heartSwitch(login) if Switch now was pressed.
+        @JavascriptInterface
+        public void heart(final String json) {
+            main.post(() -> {
+                try {
+                    JSONObject o = new JSONObject(json);
+                    showHeart(o.optString("login"), o.optString("display"), o.optString("title"), o.optString("avatar"));
+                } catch (Exception e) {
+                    js("window.__heartDone && window.__heartDone(false)");
+                }
+            });
+        }
+
+        // Sleep timer: stop in this many milliseconds (0 cancels). The page gets __slept() once it has.
+        @JavascriptInterface
+        public void sleepIn(final double ms) {
+            main.post(() -> {
+                main.removeCallbacks(sleepNow);
+                if (ms > 0) main.postDelayed(sleepNow, (long) ms);
+            });
         }
 
         @JavascriptInterface

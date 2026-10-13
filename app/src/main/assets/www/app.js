@@ -1,7 +1,7 @@
 /* global authStatus, onAuth, signIn, cancelSignIn, signOut, pending, checkLive, lastRoster, chat,
    prefs, savePrefs, isFav, setFav, hist, setWatched, recordVod, resumeAt, touchVod, noteLive, forget, continueList,
    clearHistory, addWatchTime, weekStats, loadVods, vodList, vodsAt, broadcastFor, lastLive, loadSchedule, sched,
-   clearFetched */
+   clearFetched, isHeart, setHeart */
 'use strict';
 // The screens: sign in, the five tabs (Live, Continue, VODs, Schedule, Channels), Settings, and what sits under
 // the video while watching (stream details and chat, or where you are in a past broadcast). The video itself is a
@@ -21,6 +21,8 @@ const ICONS = {
   refresh: '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>',
   back: '<polyline points="15 18 9 12 15 6"/>',
   bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+  heart: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+  moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
   more: '<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>',
   x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   check: '<polyline points="20 6 9 17 4 12"/>',
@@ -41,6 +43,8 @@ const S = {
   vodsLoading: false, vodsError: null, vodFilter: { channel: '', unwatched: false }, vodShow: 40,
   schedLoading: false, schedError: null,
   chanFilter: '',
+  background: false, // the app is out of sight (not counting picture-in-picture)
+  sleep: null,       // sleep timer: { at } (a time) or { end: true } (the end of this past broadcast)
 };
 
 // ---------- formatting ----------
@@ -194,7 +198,7 @@ function liveRowHtml(c) {
   return `<div class="tw" data-live="${esc(c.login)}" role="button">
     ${thumbBox(`${c.thumb ? `<img src="${esc(c.thumb)}" alt="" loading="lazy">` : ''}<span class="tw-badge">LIVE</span><span class="tw-viewers">${fmtNum(c.viewers)}</span><span class="tw-up" data-since="${since}">${fmtSpan(Date.now() - since)}</span>`)}
     <div class="tw-info">
-      <div class="tw-head">${avHtml(c)}<span class="tw-name">${esc(c.display)}</span>${isFav(c.login) ? `<span class="fav-mark">${icon('bell')}</span>` : ''}</div>
+      <div class="tw-head">${avHtml(c)}<span class="tw-name">${esc(c.display)}</span>${isHeart(c.login) ? `<span class="fav-mark heart">${icon('heart')}</span>` : ''}${isFav(c.login) ? `<span class="fav-mark">${icon('bell')}</span>` : ''}</div>
       <div class="tw-title">${esc(c.title || '(no title)')}</div>
       <div class="tw-game">${esc(c.game || '')}</div>
     </div>
@@ -226,6 +230,7 @@ async function check({ fresh = false } = {}) {
     S.channels = await checkLive({ fresh });
     S.error = null;
     S.checkedAt = Date.now();
+    noteWentLive();
   } catch (e) {
     if (e.code !== 'SIGNED_OUT') S.error = e.message;
   }
@@ -443,6 +448,7 @@ function chanRowsHtml() {
     <div class="chan ${c.live ? 'is-live' : ''}" ${c.live ? `data-live="${esc(c.login)}" role="button"` : ''}>
       ${avHtml(c)}
       <div class="chan-main"><span class="tw-name">${esc(c.display)}</span><span class="chan-sub">${c.live ? `<span class="live-dot"></span>live${c.game ? ` - ${esc(c.game)}` : ''}` : last[c.login] ? `last live ${esc(ago(last[c.login]))}` : ''}</span></div>
+      <button class="rb heart ${isHeart(c.login) ? 'on' : ''}" data-heart="${esc(c.login)}" aria-label="Heart" aria-pressed="${isHeart(c.login)}">${icon('heart')}</button>
       <button class="rb ${isFav(c.login) ? 'on' : ''}" data-fav="${esc(c.login)}" aria-label="Favourite" aria-pressed="${isFav(c.login)}">${icon('bell')}</button>
       <button class="rb" data-vods="${esc(c.login)}" aria-label="Past broadcasts">${icon('film')}</button>
     </div>`).join('') || '<div class="empty">No channels match that filter.</div>';
@@ -451,7 +457,7 @@ function chanRowsHtml() {
 function renderChannels(view) {
   if (!S.channels.length) { view.innerHTML = `<div class="empty">${S.checking ? 'Checking...' : 'You do not follow anyone on Twitch yet.'}</div>`; return; }
   view.innerHTML = `${statsHtml()}
-    <div class="note">The channels you follow on Twitch. Bell: a favourite, listed first. Film: its past broadcasts.</div>
+    <div class="note">The channels you follow on Twitch. Heart: offer to switch when they go live while you are watching something else. Bell: a favourite, listed first. Film: its past broadcasts.</div>
     <div class="vod-top"><input type="search" id="chan-filter" aria-label="Filter channels" placeholder="Filter ${S.channels.length} channels" value="${esc(S.chanFilter)}" /></div>
     <div id="chan-list">${chanRowsHtml()}</div>`;
   // Typing redraws only the rows, so the keyboard stays up.
@@ -469,6 +475,16 @@ $('view').addEventListener('click', (e) => {
       const login = b.dataset.fav, on = !isFav(login);
       setFav(login, on);
       snack(on ? `${(chan(login) || {}).display || login} is a favourite: listed first` : `${(chan(login) || {}).display || login} is no longer a favourite`);
+      const top = $('view').scrollTop;
+      $('chan-list').innerHTML = chanRowsHtml();
+      $('view').scrollTop = top;
+      return;
+    }
+    if (b.dataset.heart) {
+      const login = b.dataset.heart, on = !isHeart(login);
+      setHeart(login, on);
+      const name = (chan(login) || {}).display || login;
+      snack(on ? `${name} has a heart: you get the offer to switch when they go live` : `${name} no longer has a heart`);
       const top = $('view').scrollTop;
       $('chan-list').innerHTML = chanRowsHtml();
       $('view').scrollTop = top;
@@ -507,6 +523,7 @@ function watchLive(c) {
   show();
   renderWatch();
   chat.open({ login: c.login, display: c.display, id: c.id });
+  if (heartTestArmed) { heartTestArmed = false; setTimeout(heartTest, 5000); }
 }
 
 // A past broadcast, from where you left it (or opts.from seconds, or the beginning with opts.restart).
@@ -536,6 +553,7 @@ async function fromStart(c) {
 function closeWatch() {
   if (!S.watching) return;
   leaveCurrent();
+  if (S.sleep) setSleep(null);
   S.watching = null;
   if (N) N.stop();
   chat.close();
@@ -577,7 +595,8 @@ function renderWatch() {
     if (w.url) acts.push(['ext', 'external', 'twitch.tv']);
     renderVodPane();
   }
-  $('w-acts').innerHTML = acts.map(([id, ic, label]) => `<button class="chip" data-act="${id}">${icon(ic)}${esc(label)}</button>`).join('');
+  acts.push(['sleep', 'moon', sleepLabel()]);
+  $('w-acts').innerHTML = acts.map(([id, ic, label]) => `<button class="chip ${id === 'sleep' && S.sleep ? 'on' : ''}" data-act="${id}">${icon(ic)}${esc(label)}</button>`).join('');
 }
 
 function renderVodPane() {
@@ -606,6 +625,7 @@ $('w-acts').addEventListener('click', (e) => {
   else if (act === 'mark') { setWatched(w.id, !(hist.vods[w.id] && hist.vods[w.id].done)); if (!hist.vods[w.id]) touchVod(w); renderWatch(); }
   else if (act === 'golive' && c && c.live) watchLive(c);
   else if (act === 'ext' && N) N.openExternal(w.url);
+  else if (act === 'sleep') sleepMenu();
 });
 $('vodpane').addEventListener('click', (e) => {
   const b = e.target.closest('button');
@@ -630,8 +650,117 @@ window.__native.sampled = (raw) => {
   if (!r.d || !isFinite(r.d) || r.d < w.dur - Math.max(60, w.dur * 0.05) || r.t < 5) return;
   recordVod(w.id, r.t, r.d);
   renderVodPane();
+  if (S.sleep && S.sleep.end && r.d - r.t < 20) { S.sleep = null; if (N) N.sleepIn(1); }
 };
-setInterval(() => { if (S.watching && N && !document.hidden) N.sample(); }, SAMPLE_EVERY * 1000);
+// Not tied to this page being visible: in landscape and in picture-in-picture it is hidden while the video plays.
+setInterval(() => { if (S.watching && N) N.sample(); }, SAMPLE_EVERY * 1000);
+
+// ---------- Hearts ----------
+// A channel with a heart going live shows a card over the video ("Switch now") while you are watching something
+// else. The card is held back until the stream proper has probably started (settings.heartWaitMinutes after it
+// went live), since most streams open on a "starting soon" screen. Ported from the desktop app's hearts.js; the
+// card itself is drawn by the app so that it also shows in landscape.
+const HEART_HOLD_MAX = 30 * 60e3; // a card that is due while the video is out of sight waits this long for it to come back
+const heartsPending = new Map();  // login -> { since, heldAt }
+const heartQueue = [];            // channels whose card is due, shown one at a time
+let heartShowing = false;
+const liveMem = new Map();        // login -> polls missed (0 = live at the last check), to tell "just went live"
+let firstCheck = true;
+
+// After each check: which channels have just gone live. The first check after the app starts announces nobody, and
+// a channel missing from a single check (Twitch does that now and then) is not treated as having gone offline.
+function noteWentLive() {
+  const live = new Set(liveChannels().map((c) => c.login));
+  const went = [];
+  for (const login of live) { if (!liveMem.has(login) && !firstCheck) went.push(login); liveMem.set(login, 0); }
+  for (const [login, missed] of liveMem) { if (live.has(login)) continue; if (missed === 0) liveMem.set(login, 1); else liveMem.delete(login); }
+  firstCheck = false;
+  if (!prefs.settings.heartPopups) return;
+  const now = Date.now();
+  for (const login of went) {
+    if (!isHeart(login)) continue;
+    const c = chan(login);
+    // The wait counts from when the stream started, which can be well before now if the app was in the background.
+    heartsPending.set(login, { since: Math.min(now, Date.parse(c.startedAt) || now), heldAt: 0 });
+  }
+  heartsTick();
+}
+
+function heartsTick() {
+  if (!prefs.settings.heartPopups) { heartsPending.clear(); return; }
+  const wait = Math.max(0, Number(prefs.settings.heartWaitMinutes) || 0) * 60e3;
+  const now = Date.now();
+  for (const [login, p] of heartsPending) {
+    const c = chan(login);
+    if (!c || !c.live || !isHeart(login)) { heartsPending.delete(login); continue; } // went offline again, or the heart was removed
+    if (now - p.since < wait) continue;
+    const w = S.watching;
+    if (!w || (w.kind === 'live' && w.login === login)) { heartsPending.delete(login); continue; } // nothing being watched, or already there
+    if (!N || !N.playerInSight()) { // in the background or in the small window: hold it until the video is back
+      if (!p.heldAt) p.heldAt = now;
+      else if (now - p.heldAt > HEART_HOLD_MAX) heartsPending.delete(login);
+      continue;
+    }
+    heartsPending.delete(login);
+    offerHeart(c);
+  }
+}
+setInterval(heartsTick, 15e3);
+
+function offerHeart(c) {
+  if (!heartQueue.some((x) => x.login === c.login)) heartQueue.push(c);
+  heartNext();
+}
+function heartNext() {
+  if (heartShowing || !N) return;
+  let c = heartQueue.shift();
+  while (c && S.watching && S.watching.kind === 'live' && S.watching.login === c.login) c = heartQueue.shift(); // already there
+  if (!c) return;
+  heartShowing = true;
+  N.heart(JSON.stringify({ login: c.login, display: c.display, title: c.title || c.game || '', avatar: c.avatar || '' }));
+}
+window.__heartDone = () => { heartShowing = false; setTimeout(heartNext, 400); };
+window.__heartSwitch = (login) => {
+  heartShowing = false;
+  heartQueue.length = 0;
+  const c = chan(login);
+  if (c && c.live) watchLive(c); else snack('That stream has ended', true);
+};
+
+// Settings > Hearts > "Show me one now": the card for a channel that is live (one with a heart if there is one).
+let heartTestArmed = false;
+function heartTest() {
+  if (!S.watching) return;
+  const live = liveChannels().filter((c) => !(S.watching.kind === 'live' && S.watching.login === c.login));
+  const c = live.find((x) => isHeart(x.login)) || live[0];
+  if (c) offerHeart(c);
+}
+
+// ---------- sleep timer ----------
+// Stops the video after a while (the sound fades out first), or at the end of a past broadcast. The clock runs in
+// the app, so it still fires in landscape and in picture-in-picture.
+function sleepLabel() {
+  if (!S.sleep) return 'Sleep';
+  if (S.sleep.end) return 'Sleep: at the end';
+  return `Sleep: ${Math.max(1, Math.round((S.sleep.at - Date.now()) / 60e3))}m`;
+}
+function setSleep(sl) {
+  S.sleep = sl;
+  if (N) N.sleepIn(sl && sl.at ? Math.max(1, sl.at - Date.now()) : 0);
+  renderWatch();
+}
+function sleepMenu() {
+  const items = [15, 30, 45, 60, 90, 120].map((m) => ({ label: m < 60 ? `${m} minutes` : m === 60 ? '1 hour' : `${m / 60} hours`.replace('1.5 hours', '1 hour 30'), fn: () => { setSleep({ at: Date.now() + m * 60e3 }); snack(`Sleep timer: stops at ${clock(Date.now() + m * 60e3)}`); } }));
+  if (S.watching && S.watching.kind === 'vod') items.push({ label: 'At the end of this broadcast', fn: () => { setSleep({ end: true }); snack('Sleep timer: stops when this broadcast ends'); } });
+  if (S.sleep) items.push({ label: 'Turn the sleep timer off', danger: true, fn: () => { setSleep(null); snack('Sleep timer off'); } });
+  sheet('Sleep timer', items, S.sleep ? (S.sleep.end ? 'On: stops at the end of this broadcast.' : `On: stops at ${clock(S.sleep.at)}.`) : 'Stops the video after a while. The sound fades out first.');
+}
+// The app has faded the sound out and paused: close the player so the screen can go off.
+window.__slept = () => {
+  S.sleep = null;
+  if (S.watching) { closeWatch(); snack('Sleep timer: stopped'); }
+};
+setInterval(() => { if (S.sleep && S.sleep.at && S.watching) renderWatch(); }, 30e3);
 
 // ---------- Settings ----------
 function renderMe() {
@@ -652,7 +781,14 @@ function renderSettings() {
     <div class="panel"><h3>Live list</h3>
       <label class="setting"><input type="checkbox" data-set="showOffline" ${s.showOffline ? 'checked' : ''}> Show offline channels under the live ones</label>
       <label class="setting col">Check who is live every (seconds, at least 20)<input type="number" inputmode="numeric" min="20" max="600" id="set-poll" value="${esc(s.pollSeconds)}"></label></div>
+    <div class="panel"><h3>Hearts</h3>
+      <p class="muted small">Give a channel a heart (in Channels) and, when it goes live while you are watching something else, a card slides in over the video for 10 seconds with a <strong>Switch now</strong> button.</p>
+      <label class="setting"><input type="checkbox" data-set="heartPopups" ${s.heartPopups ? 'checked' : ''}> Offer to switch when a channel with a heart goes live</label>
+      <label class="setting col">Minutes to wait after they go live, so the "starting soon" screen is over (0 = straight away)<input type="number" inputmode="numeric" min="0" max="30" id="set-heartwait" value="${esc(s.heartWaitMinutes)}"></label>
+      <button class="btn" id="set-hearttest">Show me one now</button>
+      <p class="muted small" style="margin:10px 0 0">Then open any live stream: the card for another live channel shows a few seconds in.</p></div>
     <div class="panel"><h3>Player</h3>
+      <label class="setting"><input type="checkbox" data-set="pip" ${s.pip ? 'checked' : ''}> Keep playing in a small window when I leave the app</label>
       <label class="setting"><input type="checkbox" data-set="cleanPlayer" ${s.cleanPlayer ? 'checked' : ''}> Hide Twitch's title bar and content warning over the video</label></div>
     <div class="panel"><h3>History</h3>
       <p class="muted small">How far you got into each past broadcast, the Continue list and your watch time. Kept on this phone only.</p>
@@ -666,6 +802,14 @@ $('settings-body').addEventListener('change', (e) => {
     prefs.settings[el.dataset.set] = el.checked;
     savePrefs();
     if (el.dataset.set === 'cleanPlayer' && N) N.setClean(el.checked);
+    if (el.dataset.set === 'pip' && N) N.setPip(el.checked);
+    if (el.dataset.set === 'heartPopups' && !el.checked) heartsPending.clear();
+  } else if (el.id === 'set-heartwait') {
+    const v = Number(el.value);
+    if (el.value.trim() === '' || !(v >= 0 && v <= 30)) { snack('Enter a number from 0 to 30.', true); el.value = prefs.settings.heartWaitMinutes; return; }
+    prefs.settings.heartWaitMinutes = v;
+    savePrefs();
+    snack('Saved');
   } else if (el.id === 'set-poll') {
     const v = Number(el.value);
     if (el.value.trim() === '' || !(v >= 20 && v <= 600)) { snack('Enter a number from 20 to 600.', true); el.value = prefs.settings.pollSeconds; return; }
@@ -676,7 +820,12 @@ $('settings-body').addEventListener('change', (e) => {
   }
 });
 $('settings-body').addEventListener('click', (e) => {
-  if (e.target.id === 'set-signout') sheet('Sign out of Twitch?', [{ label: 'Sign out', danger: true, fn: () => signOut() }], 'This removes the sign-in from this app and the player. Your favourites and watch history stay.');
+  if (e.target.id === 'set-hearttest') {
+    // Settings is not on screen while a stream is: arm it, and the card shows a few seconds into the next stream opened.
+    if (liveChannels().length < 2) { snack('It needs two live channels: one to watch and one to offer.', true); return; }
+    heartTestArmed = true;
+    snack('Now open any live stream: the card shows a few seconds in.');
+  } else if (e.target.id === 'set-signout') sheet('Sign out of Twitch?', [{ label: 'Sign out', danger: true, fn: () => signOut() }], 'This removes the sign-in from this app and the player. Your favourites and watch history stay.');
   else if (e.target.id === 'set-clear') sheet('Clear watch history?', [{ label: 'Clear it', danger: true, fn: () => { clearHistory(); snack('Watch history cleared'); } }], 'Forgets your place in every past broadcast, the Continue list and your watch time.');
 });
 
@@ -691,9 +840,12 @@ window.__back = () => {
 };
 // The app came back to the front.
 window.__resume = () => {
+  S.background = false;
   chat.resume();
   if (Date.now() - S.checkedAt > 30e3) check();
 };
+// The app left the front: into picture-in-picture (still watching), or out of sight.
+window.__pause = (pip) => { S.background = !pip; };
 window.__layout = () => {};
 
 // ---------- clocks ----------
@@ -703,11 +855,11 @@ setInterval(() => {
 let pollTimer = null;
 function startPolling() {
   clearInterval(pollTimer);
-  pollTimer = setInterval(() => { if (!document.hidden) check(); }, Math.max(20, Number(prefs.settings.pollSeconds) || 60) * 1000);
+  pollTimer = setInterval(() => { if (!S.background) check(); }, Math.max(20, Number(prefs.settings.pollSeconds) || 60) * 1000);
 }
 
 // ---------- start ----------
-if (N) N.setClean(!!prefs.settings.cleanPlayer);
+if (N) { N.setClean(!!prefs.settings.cleanPlayer); N.setPip(!!prefs.settings.pip); }
 renderSignIn(authStatus());
 show();
 startPolling();
