@@ -30,6 +30,7 @@
       <h2 id="t-title">Live</h2>
       <span class="pill" id="t-pill"></span>
       <span class="bar-note" id="t-note"></span>
+      <button class="ib" id="b-search" aria-label="Find a channel"></button>
       <button class="ib" id="b-refresh" aria-label="Check now"></button>
       <button class="me" id="b-me" aria-label="Settings"><span class="av" id="me-av"></span></button>
     </header>
@@ -58,6 +59,12 @@
     <div class="compose-off" id="compose-off">Read-only chat.</div>
     <!-- a past broadcast: where you are in it, and more from the channel -->
     <main class="rows vodpane" id="vodpane"></main>
+  </section>
+
+  <!-- Search: any channel on Twitch -->
+  <section class="screen search" id="search" hidden>
+    <header class="bar wbar"><button class="ib" id="b-search-back" aria-label="Back"></button><input type="search" id="q" placeholder="Find a channel on Twitch" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" /></header>
+    <main class="rows" id="results"></main>
   </section>
 
   <!-- Settings -->

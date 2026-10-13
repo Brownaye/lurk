@@ -39,15 +39,33 @@ function http(method, url, headers = {}, body = '') {
 const parseJson = (t) => { try { return JSON.parse(t) || {}; } catch { return {}; } };
 
 // ---------- auth ----------
-let auth = store.get('auth', null); // { access, refresh, expiresAt, user: { id, login, display, avatar } }
-if (!(auth && auth.access && auth.user && auth.user.id)) auth = null;
+// { access, refresh, expiresAt, user: { id, login, display, avatar } }. Kept by the app rather than this page
+// (window.Native), so the background check for who went live can use it, and refresh it, with the pages closed.
+function readAuth() {
+  let a = null;
+  if (window.Native && window.Native.getAuth) { try { a = JSON.parse(window.Native.getAuth() || 'null'); } catch { a = null; } }
+  if (!a) a = store.get('auth', null); // from before 1.3, or a plain browser
+  return a && a.access && a.user && a.user.id ? a : null;
+}
+let auth = readAuth();
 let pending = null;    // { code, cancel } while signing in
 let refreshing = null;
 const authListeners = [];
 const onAuth = (fn) => authListeners.push(fn);
 const authStatus = () => ({ signedIn: !!auth, user: auth ? auth.user : null, pending: pending ? { code: pending.code } : null });
 const authChanged = (extra) => authListeners.forEach((fn) => fn({ ...authStatus(), ...(extra || {}) }));
-const saveAuth = () => (auth ? store.set('auth', auth) : store.del('auth'));
+function saveAuth() {
+  if (window.Native && window.Native.setAuth) { window.Native.setAuth(auth ? JSON.stringify(auth) : ''); store.del('auth'); }
+  else if (auth) store.set('auth', auth);
+  else store.del('auth');
+}
+if (auth) saveAuth(); // moves a sign-in from before 1.3 across
+// Back from the background: the background check may have refreshed the token meanwhile (refresh tokens are
+// single use, so the newer pair is the only one that still works).
+function reloadAuth() {
+  const a = readAuth();
+  if (a && auth && a.access !== auth.access) Object.assign(auth, { access: a.access, refresh: a.refresh, expiresAt: a.expiresAt });
+}
 
 function signedOutError() {
   const e = new Error('Sign in with Twitch first');
@@ -210,7 +228,9 @@ async function checkLive({ fresh = false } = {}) {
     st.follows = await followed();
     st.followsAt = now;
   }
-  const logins = st.follows;
+  // Channels added from search are checked along with the ones you follow on Twitch.
+  const extra = typeof prefs !== 'undefined' && Array.isArray(prefs.extra) ? prefs.extra : [];
+  const logins = [...new Set([...st.follows, ...extra])];
   const stale = logins.filter((l) => !st.users[l] || now - (st.users[l].at || 0) > USER_REFRESH);
   for (const group of chunk(stale, 100)) {
     const users = await helix('/users', group.map((l) => ['login', l]));

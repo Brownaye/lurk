@@ -14,9 +14,20 @@ prefs.settings = {
   pip: true,           // keep playing in a small window when leaving the app while watching
   heartPopups: true,   // a card over the video when a channel with a heart goes live
   heartWaitMinutes: 5, // how long after going live the card shows, to let a "starting soon" screen pass (0 = at once)
+  alerts: false,       // notifications when a favourite or a heart goes live, also with the app closed
+  screenAudio: true,   // keep playing with the screen off
   ...(prefs.settings && typeof prefs.settings === 'object' ? prefs.settings : {}),
 };
-const savePrefs = () => store.set('prefs', prefs);
+// Channels added from search: checked along with the ones followed on Twitch, without following them there.
+prefs.extra = Array.isArray(prefs.extra) ? prefs.extra : [];
+const isExtra = (login) => prefs.extra.includes(login);
+// The app itself needs a few of these with the pages closed (the background check, playing with the screen off).
+function syncNative() {
+  if (window.Native && window.Native.setPrefs) {
+    window.Native.setPrefs(JSON.stringify({ favourites: prefs.favourites, hearts: prefs.hearts || [], extra: prefs.extra || [], alerts: !!prefs.settings.alerts, screenAudio: !!prefs.settings.screenAudio }));
+  }
+}
+const savePrefs = () => { store.set('prefs', prefs); syncNative(); };
 // Hearts: channels whose going live shows a card over whatever else you are watching ("Switch now").
 prefs.hearts = Array.isArray(prefs.hearts) ? prefs.hearts : [];
 const isHeart = (login) => prefs.hearts.includes(login);
@@ -26,6 +37,7 @@ function setHeart(login, on) {
   prefs.hearts = [...set];
   savePrefs();
 }
+syncNative();
 const isFav = (login) => prefs.favourites.includes(login);
 function setFav(login, on) {
   const set = new Set(prefs.favourites);

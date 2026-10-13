@@ -1,7 +1,7 @@
 /* global authStatus, onAuth, signIn, cancelSignIn, signOut, pending, checkLive, lastRoster, chat,
    prefs, savePrefs, isFav, setFav, hist, setWatched, recordVod, resumeAt, touchVod, noteLive, forget, continueList,
    clearHistory, addWatchTime, weekStats, loadVods, vodList, vodsAt, broadcastFor, lastLive, loadSchedule, sched,
-   clearFetched, isHeart, setHeart */
+   clearFetched, isHeart, setHeart, reloadAuth, helix, isExtra */
 'use strict';
 // The screens: sign in, the five tabs (Live, Continue, VODs, Schedule, Channels), Settings, and what sits under
 // the video while watching (stream details and chat, or where you are in a past broadcast). The video itself is a
@@ -23,6 +23,8 @@ const ICONS = {
   bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
   heart: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
   moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  search: '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.2" y2="16.2"/>',
   more: '<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>',
   x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   check: '<polyline points="20 6 9 17 4 12"/>',
@@ -45,6 +47,8 @@ const S = {
   chanFilter: '',
   background: false, // the app is out of sight (not counting picture-in-picture)
   sleep: null,       // sleep timer: { at } (a time) or { end: true } (the end of this past broadcast)
+  searchOpen: false, searchState: '',
+  openWanted: '',    // a tapped notification asked for this channel
 };
 
 // ---------- formatting ----------
@@ -112,7 +116,8 @@ $('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) close
 function show() {
   const signedIn = authStatus().signedIn;
   $('signin').hidden = signedIn;
-  $('main').hidden = !signedIn || !!S.watching || S.settingsOpen;
+  $('main').hidden = !signedIn || !!S.watching || S.settingsOpen || S.searchOpen;
+  $('search').hidden = !signedIn || !!S.watching || !S.searchOpen;
   $('watch').hidden = !signedIn || !S.watching;
   $('settings').hidden = !signedIn || !!S.watching || !S.settingsOpen;
 }
@@ -135,7 +140,7 @@ $('b-reopen').addEventListener('click', () => { if (pending && N) N.signInPage(p
 
 onAuth((st) => {
   renderSignIn(st);
-  if (!st.signedIn) { closeWatch(); S.channels = []; S.error = null; S.settingsOpen = false; clearFetched(); }
+  if (!st.signedIn) { closeWatch(); S.channels = []; S.error = null; S.settingsOpen = false; S.searchOpen = false; clearFetched(); }
   show();
   if (st.signedIn) { renderMe(); S.tab = 'live'; render(); check({ fresh: true }); }
 });
@@ -231,6 +236,8 @@ async function check({ fresh = false } = {}) {
     S.error = null;
     S.checkedAt = Date.now();
     noteWentLive();
+    tryOpen();
+    refreshGuest();
   } catch (e) {
     if (e.code !== 'SIGNED_OUT') S.error = e.message;
   }
@@ -451,13 +458,14 @@ function chanRowsHtml() {
       <button class="rb heart ${isHeart(c.login) ? 'on' : ''}" data-heart="${esc(c.login)}" aria-label="Heart" aria-pressed="${isHeart(c.login)}">${icon('heart')}</button>
       <button class="rb ${isFav(c.login) ? 'on' : ''}" data-fav="${esc(c.login)}" aria-label="Favourite" aria-pressed="${isFav(c.login)}">${icon('bell')}</button>
       <button class="rb" data-vods="${esc(c.login)}" aria-label="Past broadcasts">${icon('film')}</button>
+      ${isExtra(c.login) ? `<button class="rb" data-rmx="${esc(c.login)}" aria-label="Remove">${icon('x')}</button>` : ''}
     </div>`).join('') || '<div class="empty">No channels match that filter.</div>';
 }
 
 function renderChannels(view) {
   if (!S.channels.length) { view.innerHTML = `<div class="empty">${S.checking ? 'Checking...' : 'You do not follow anyone on Twitch yet.'}</div>`; return; }
   view.innerHTML = `${statsHtml()}
-    <div class="note">The channels you follow on Twitch. Heart: offer to switch when they go live while you are watching something else. Bell: a favourite, listed first. Film: its past broadcasts.</div>
+    <div class="note">The channels you follow on Twitch, and any you added from search (the magnifying glass). Heart: offer to switch when they go live while you are watching something else. Bell: a favourite, listed first and announced when live if alerts are on. Film: its past broadcasts.</div>
     <div class="vod-top"><input type="search" id="chan-filter" aria-label="Filter channels" placeholder="Filter ${S.channels.length} channels" value="${esc(S.chanFilter)}" /></div>
     <div id="chan-list">${chanRowsHtml()}</div>`;
   // Typing redraws only the rows, so the keyboard stays up.
@@ -491,6 +499,11 @@ $('view').addEventListener('click', (e) => {
       return;
     }
     if (b.dataset.vods) { S.vodFilter.channel = b.dataset.vods; S.vodShow = 40; setTab('vods'); return; }
+    if (b.dataset.rmx) {
+      const c = chan(b.dataset.rmx) || { login: b.dataset.rmx, display: b.dataset.rmx };
+      sheet(`Remove ${c.display}?`, [{ label: 'Remove from my channels', danger: true, fn: () => removeExtra(c.login) }], 'You added this channel from search. It is not followed on Twitch.');
+      return;
+    }
     return;
   }
   const row = t.closest('[data-live], [data-vod], [data-ci], [data-chan]');
@@ -509,17 +522,22 @@ function vodUrl(id, from) {
   return `https://player.twitch.tv/?video=v${encodeURIComponent(id)}&parent=twitch.tv&autoplay=true&muted=false${time}`;
 }
 
+// The same thumbnail at a size that suits the player: it is what shows while the stream loads.
+const bigThumb = (url) => (url ? String(url).replace(/-\d+x\d+(\.\w+)(\?.*)?$/, '-1280x720$1$2') : '');
+
 // Leaving whatever is on: a live stream watched for a minute or more goes to Continue.
 function leaveCurrent() {
   const w = S.watching;
   if (!w) return;
-  if (w.kind === 'live' && w.secs >= 60) { const c = chan(w.login); if (c && c.live) noteLive(c, Date.now()); }
+  if (w.kind === 'live' && w.secs >= 60) { const c = chan(w.login) || w.guest; if (c && c.live) noteLive(c, Date.now()); }
 }
 
 function watchLive(c) {
+  // Going from one live stream to another, the one being left stays loaded for a minute in case you come back.
+  const keep = !!(S.watching && S.watching.kind === 'live');
   leaveCurrent();
-  S.watching = { kind: 'live', login: c.login, display: c.display, avatar: c.avatar, cid: c.id, secs: 0 };
-  if (N) N.play(liveUrl(c.login));
+  S.watching = { kind: 'live', login: c.login, display: c.display, avatar: c.avatar, cid: c.id, secs: 0, guest: chan(c.login) ? null : c };
+  if (N) { N.nowPlaying(c.display); N.play(`live:${c.login}`, liveUrl(c.login), keep, bigThumb(c.thumb)); }
   show();
   renderWatch();
   chat.open({ login: c.login, display: c.display, id: c.id });
@@ -534,7 +552,7 @@ function playVod(v, opts = {}) {
   touchVod(v);
   S.watching = { kind: 'vod', id: v.id, dur: v.dur, createdAt: v.createdAt || null, url: v.url, title: v.title, thumb: v.thumb, login: v.login, display: v.display, avatar: v.avatar, secs: 0 };
   chat.close();
-  if (N) N.play(vodUrl(v.id, from));
+  if (N) { N.nowPlaying([v.display, v.title].filter(Boolean).join(': ')); N.play(`vod:${v.id}`, vodUrl(v.id, from), false, bigThumb(v.thumb)); }
   show();
   renderWatch();
   $('vodpane').scrollTop = 0;
@@ -569,7 +587,7 @@ $('b-back').addEventListener('click', closeWatch);
 function renderWatch() {
   const w = S.watching;
   if (!w) return;
-  const c = chan(w.login);
+  const c = chan(w.login) || w.guest || null;
   $('watch').classList.toggle('is-vod', w.kind === 'vod');
   setAv($('w-av'), (c && c.avatar) || w.avatar);
   $('w-name').textContent = (c && c.display) || w.display;
@@ -618,7 +636,7 @@ $('w-acts').addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');
   const w = S.watching;
   if (!b || !w) return;
-  const c = chan(w.login);
+  const c = chan(w.login) || w.guest || null;
   const act = b.dataset.act;
   if (act === 'start' && c) fromStart(c);
   else if (act === 'restart') playVod(w, { restart: true });
@@ -675,6 +693,7 @@ function noteWentLive() {
   for (const login of live) { if (!liveMem.has(login) && !firstCheck) went.push(login); liveMem.set(login, 0); }
   for (const [login, missed] of liveMem) { if (live.has(login)) continue; if (missed === 0) liveMem.set(login, 1); else liveMem.delete(login); }
   firstCheck = false;
+  announce(went);
   if (!prefs.settings.heartPopups) return;
   const now = Date.now();
   for (const login of went) {
@@ -762,6 +781,207 @@ window.__slept = () => {
 };
 setInterval(() => { if (S.sleep && S.sleep.at && S.watching) renderWatch(); }, 30e3);
 
+// ---------- alerts ----------
+// Notifications for who has just gone live (Settings > Alerts): favourites always, hearts when nothing is being
+// watched (otherwise the card over the video does it). Then every live broadcast is marked as known, so the
+// background check does not announce it again later.
+function announce(went) {
+  if (!N) return;
+  if (prefs.settings.alerts) {
+    for (const login of went) {
+      const c = chan(login);
+      if (c && (isFav(login) || (isHeart(login) && !S.watching))) {
+        N.notifyLive(JSON.stringify({ login, display: c.display, title: [c.title, c.game].filter(Boolean).join(' - '), startedAt: c.startedAt || '' }));
+      }
+    }
+  }
+  N.seenLive(JSON.stringify(Object.fromEntries(liveChannels().map((c) => [c.login, c.startedAt || '']))));
+}
+// Android answered the request to show notifications.
+window.__notifPerm = (ok) => {
+  if (ok || !prefs.settings.alerts) return;
+  prefs.settings.alerts = false;
+  savePrefs();
+  if (S.settingsOpen) renderSettings();
+  snack('Notifications are blocked for this app in Android settings, so alerts stay off.', true);
+};
+
+// A tapped notification: open that stream, once this session has checked who is live.
+function tryOpen() {
+  if (!S.openWanted || !S.checkedAt) return;
+  const c = chan(S.openWanted);
+  S.openWanted = '';
+  if (c && c.live) { if (!(S.watching && S.watching.kind === 'live' && S.watching.login === c.login)) watchLive(c); }
+  else if (c) snack(`${c.display} is no longer live`, true);
+}
+window.__open = (login) => { S.openWanted = login; if (S.checking) return; check().then(tryOpen); };
+// The Stop button on the "now playing" notification.
+window.__stopAll = () => closeWatch();
+
+// ---------- next and previous channel ----------
+// The live channels in the Live list's order: favourites first, then by viewers.
+function liveOrder() {
+  const fav = (a, b) => (isFav(b.login) ? 1 : 0) - (isFav(a.login) ? 1 : 0);
+  return liveChannels().sort((a, b) => fav(a, b) || (b.viewers || 0) - (a.viewers || 0));
+}
+const flash = (text) => { if (N) N.flash(text); else snack(text); };
+
+// The next (dir 1) or previous (dir -1) live channel from the one playing, wrapping round at the ends.
+function step(dir) {
+  const w = S.watching;
+  if (!w) return;
+  const list = liveOrder();
+  const at = w.kind === 'live' ? list.findIndex((c) => c.login === w.login) : -1;
+  const next = list.length ? list[(((at < 0 && dir < 0 ? 0 : at) + dir) % list.length + list.length) % list.length] : null;
+  if (!next || (w.kind === 'live' && next.login === w.login)) { flash('No other live channel'); return; }
+  watchLive(next);
+  flash(next.display);
+  // Flicking through: the one after this, in the same direction, starts loading now so it is ready when you get there.
+  const ahead = list[((list.indexOf(next) + dir) % list.length + list.length) % list.length];
+  if (N && ahead && ahead.login !== next.login && ahead.login !== w.login) N.warm(`live:${ahead.login}`, liveUrl(ahead.login).replace('muted=false', 'muted=true'));
+}
+// A sideways swipe: over the video (the app sends it), or over what is under it (below). Not on a past broadcast,
+// where sideways is for seeking.
+window.__swipe = (dir) => { if (S.watching && S.watching.kind === 'live') step(dir); };
+let swipeFrom = null;
+$('watch').addEventListener('touchstart', (e) => {
+  const t = e.touches[0];
+  swipeFrom = e.touches.length === 1 && !e.target.closest('input, .w-acts') ? { x: t.clientX, y: t.clientY, at: Date.now() } : null;
+}, { passive: true });
+$('watch').addEventListener('touchend', (e) => {
+  if (!swipeFrom) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - swipeFrom.x, dy = t.clientY - swipeFrom.y, quick = Date.now() - swipeFrom.at < 600;
+  swipeFrom = null;
+  if (quick && Math.abs(dx) > 80 && Math.abs(dx) > 2.2 * Math.abs(dy)) window.__swipe(dx < 0 ? 1 : -1);
+}, { passive: true });
+
+// ---------- Search ----------
+// Any channel on Twitch, by name. A live one can be watched straight away; any of them can be added to your
+// channels, which puts it in Live, VODs and the rest without following it on Twitch.
+let searchSeq = 0;
+let searchTimer = null;
+let searchRows = [];
+
+function openSearch() {
+  S.searchOpen = true;
+  show();
+  renderResults();
+  setTimeout(() => $('q').focus(), 60);
+}
+function closeSearch() {
+  S.searchOpen = false;
+  $('q').blur();
+  show();
+  render();
+}
+$('b-search').innerHTML = icon('search');
+$('b-search').addEventListener('click', openSearch);
+$('b-search-back').innerHTML = icon('back');
+$('b-search-back').addEventListener('click', closeSearch);
+$('q').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => runSearch($('q').value.trim()), 350);
+});
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(searchTimer); runSearch($('q').value.trim()); $('q').blur(); } });
+
+async function runSearch(q) {
+  const seq = ++searchSeq;
+  if (q.length < 2) { searchRows = []; S.searchState = ''; renderResults(); return; }
+  S.searchState = 'loading';
+  renderResults();
+  try {
+    const rows = await helix('/search/channels', [['query', q], ['first', '25']]);
+    if (seq !== searchSeq) return; // a newer search has been typed since
+    const exact = q.toLowerCase();
+    searchRows = rows.map((r) => ({
+      login: String(r.broadcaster_login).toLowerCase(), id: r.id, display: r.display_name, avatar: r.thumbnail_url,
+      live: !!r.is_live, title: r.title || '', game: r.game_name || '', startedAt: r.started_at || null,
+    })).sort((a, b) => (b.login === exact) - (a.login === exact) || b.live - a.live);
+    S.searchState = searchRows.length ? '' : 'none';
+  } catch (e) {
+    if (seq !== searchSeq) return;
+    searchRows = [];
+    S.searchState = e.code === 'SIGNED_OUT' ? '' : e.message;
+  }
+  renderResults();
+}
+
+function renderResults() {
+  const st = S.searchState;
+  const el = $('results');
+  if (st === 'loading' && !searchRows.length) { el.innerHTML = '<div class="empty">Searching...</div>'; return; }
+  if (st === 'none') { el.innerHTML = '<div class="empty"><strong>No channel found by that name.</strong></div>'; return; }
+  if (st && st !== 'loading') { el.innerHTML = `<div class="empty"><strong>Could not search.</strong><br>${esc(st)}</div>`; return; }
+  if (!searchRows.length) { el.innerHTML = '<div class="empty">Type a channel name. A live channel can be watched straight away, and any channel can be added to yours without following it on Twitch.</div>'; return; }
+  el.innerHTML = searchRows.map((r, i) => `
+    <div class="chan ${r.live ? 'is-live' : ''}" data-ri="${i}" role="button">
+      ${avHtml(r)}
+      <div class="chan-main"><span class="tw-name">${esc(r.display)}${chan(r.login) ? '<span class="chan-tag">in your channels</span>' : ''}</span>
+        <span class="chan-sub">${r.live ? `<span class="live-dot"></span>live${r.game ? ` - ${esc(r.game)}` : ''}` : 'offline'}</span></div>
+      <span class="rb">${icon('more')}</span>
+    </div>`).join('');
+}
+$('results').addEventListener('click', (e) => {
+  const row = e.target.closest('[data-ri]');
+  const r = row && searchRows[+row.dataset.ri];
+  if (r) resultMenu(r);
+});
+
+function resultMenu(r) {
+  const items = [];
+  if (r.live) items.push({ label: 'Watch live', fn: () => watchFound(r) });
+  if (!chan(r.login)) items.push({ label: 'Add to my channels', fn: () => addExtra(r) });
+  else if (isExtra(r.login)) items.push({ label: 'Remove from my channels', danger: true, fn: () => removeExtra(r.login) });
+  items.push({ label: 'Open on twitch.tv', fn: () => N && N.openExternal(`https://www.twitch.tv/${encodeURIComponent(r.login)}`) });
+  sheet(r.display, items, r.live ? r.title || r.game : 'Offline');
+}
+
+// The live stream of a channel, as the Live list would describe it. null if it is not live.
+async function streamOf(r) {
+  const [s] = await helix('/streams', [['user_login', r.login]]);
+  if (!s) return null;
+  return {
+    login: r.login, id: r.id || s.user_id, display: r.display || s.user_name, avatar: r.avatar || null, live: true,
+    title: s.title, game: s.game_name, viewers: s.viewer_count, startedAt: s.started_at,
+    thumb: s.thumbnail_url ? s.thumbnail_url.replace('{width}', '440').replace('{height}', '248') : null,
+  };
+}
+
+async function watchFound(r) {
+  const mine = chan(r.login);
+  if (mine && mine.live) { watchLive(mine); return; }
+  let c;
+  try { c = await streamOf(r); } catch (e) { snack(e.message, true); return; }
+  if (!c) { snack(`${r.display} is not live any more`, true); return; }
+  watchLive(c);
+}
+
+// While a channel that is not in yours is being watched, each check also refreshes its details.
+async function refreshGuest() {
+  const w = S.watching;
+  if (!w || w.kind !== 'live' || !w.guest) return;
+  let c;
+  try { c = await streamOf(w.guest); } catch { return; }
+  if (S.watching !== w) return;
+  w.guest = c || { ...w.guest, live: false };
+  renderWatch();
+}
+
+function addExtra(r) {
+  if (!isExtra(r.login)) { prefs.extra.push(r.login); savePrefs(); }
+  snack(`Added ${r.display}: it is in Live, VODs and Channels from now on`);
+  renderResults();
+  check({ fresh: true }).then(renderResults);
+}
+function removeExtra(login) {
+  prefs.extra = prefs.extra.filter((l) => l !== login);
+  setFav(login, false);
+  setHeart(login, false);
+  snack('Removed from your channels');
+  check({ fresh: true }).then(() => { if (S.searchOpen) renderResults(); });
+}
+
 // ---------- Settings ----------
 function renderMe() {
   const u = authStatus().user;
@@ -781,6 +1001,10 @@ function renderSettings() {
     <div class="panel"><h3>Live list</h3>
       <label class="setting"><input type="checkbox" data-set="showOffline" ${s.showOffline ? 'checked' : ''}> Show offline channels under the live ones</label>
       <label class="setting col">Check who is live every (seconds, at least 20)<input type="number" inputmode="numeric" min="20" max="600" id="set-poll" value="${esc(s.pollSeconds)}"></label></div>
+    <div class="panel"><h3>Alerts</h3>
+      <label class="setting"><input type="checkbox" data-set="alerts" ${s.alerts ? 'checked' : ''}> Tell me when a favourite or a channel with a heart goes live</label>
+      <p class="muted small" style="margin:6px 0 0">A notification you can tap to open the stream, also with the app closed. Closed, it checks about every 15 minutes, and Android may stretch that while the phone is idle.</p>
+      <button class="btn" id="set-alerttest" style="margin-top:10px">Send a test alert</button></div>
     <div class="panel"><h3>Hearts</h3>
       <p class="muted small">Give a channel a heart (in Channels) and, when it goes live while you are watching something else, a card slides in over the video for 10 seconds with a <strong>Switch now</strong> button.</p>
       <label class="setting"><input type="checkbox" data-set="heartPopups" ${s.heartPopups ? 'checked' : ''}> Offer to switch when a channel with a heart goes live</label>
@@ -789,6 +1013,7 @@ function renderSettings() {
       <p class="muted small" style="margin:10px 0 0">Then open any live stream: the card for another live channel shows a few seconds in.</p></div>
     <div class="panel"><h3>Player</h3>
       <label class="setting"><input type="checkbox" data-set="pip" ${s.pip ? 'checked' : ''}> Keep playing in a small window when I leave the app</label>
+      <label class="setting"><input type="checkbox" data-set="screenAudio" ${s.screenAudio ? 'checked' : ''}> Keep playing with the screen off</label>
       <label class="setting"><input type="checkbox" data-set="cleanPlayer" ${s.cleanPlayer ? 'checked' : ''}> Hide Twitch's title bar and content warning over the video</label></div>
     <div class="panel"><h3>History</h3>
       <p class="muted small">How far you got into each past broadcast, the Continue list and your watch time. Kept on this phone only.</p>
@@ -803,6 +1028,7 @@ $('settings-body').addEventListener('change', (e) => {
     savePrefs();
     if (el.dataset.set === 'cleanPlayer' && N) N.setClean(el.checked);
     if (el.dataset.set === 'pip' && N) N.setPip(el.checked);
+    if (el.dataset.set === 'alerts' && el.checked && N && !N.notificationsAllowed()) N.askNotifications();
     if (el.dataset.set === 'heartPopups' && !el.checked) heartsPending.clear();
   } else if (el.id === 'set-heartwait') {
     const v = Number(el.value);
@@ -820,7 +1046,14 @@ $('settings-body').addEventListener('change', (e) => {
   }
 });
 $('settings-body').addEventListener('click', (e) => {
-  if (e.target.id === 'set-hearttest') {
+  if (e.target.id === 'set-alerttest') {
+    if (!N) return;
+    if (!N.notificationsAllowed()) { snack('Turn alerts on first, and allow notifications when Android asks.', true); return; }
+    const c = liveOrder()[0];
+    if (!c) { snack('Nobody you follow is live right now to show it with.', true); return; }
+    N.testNotify(JSON.stringify({ login: c.login, display: c.display, title: [c.title, c.game].filter(Boolean).join(' - ') }));
+    snack('Sent: pull down the notification shade. Tapping it opens the stream.');
+  } else if (e.target.id === 'set-hearttest') {
     // Settings is not on screen while a stream is: arm it, and the card shows a few seconds into the next stream opened.
     if (liveChannels().length < 2) { snack('It needs two live channels: one to watch and one to offer.', true); return; }
     heartTestArmed = true;
@@ -834,6 +1067,7 @@ $('settings-body').addEventListener('click', (e) => {
 window.__back = () => {
   if (!$('sheet').hidden) { closeSheet(); return true; }
   if (S.watching) { closeWatch(); return true; }
+  if (S.searchOpen) { closeSearch(); return true; }
   if (S.settingsOpen) { S.settingsOpen = false; show(); render(); return true; }
   if (S.tab !== 'live') { setTab('live'); return true; }
   return false;
@@ -841,6 +1075,7 @@ window.__back = () => {
 // The app came back to the front.
 window.__resume = () => {
   S.background = false;
+  reloadAuth();
   chat.resume();
   if (Date.now() - S.checkedAt > 30e3) check();
 };
@@ -863,4 +1098,5 @@ if (N) { N.setClean(!!prefs.settings.cleanPlayer); N.setPip(!!prefs.settings.pip
 renderSignIn(authStatus());
 show();
 startPolling();
+S.openWanted = N ? N.takeOpen() : '';
 if (authStatus().signedIn) { renderMe(); render(); check({ fresh: true }); }

@@ -226,3 +226,9 @@ button, input, select { font: inherit; color: inherit; }
 /* ---- hearts, sleep timer ---- */
 .rb.heart.on, .fav-mark.heart { color: #ff5c8a; }
 .chip.on { border-color: var(--accent); color: var(--accent-2); }
+
+/* ---- search ---- */
+.bar input[type="search"] { flex: 1; min-width: 0; margin-right: 6px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 16px; outline: none; user-select: text; }
+.bar input[type="search"]:focus { border-color: var(--accent); }
+.chan-tag { margin-left: 6px; font-size: 11px; font-weight: 600; color: var(--muted); }
+#results .chan:active { background: var(--bg-2); }
