@@ -24,26 +24,23 @@
     <p class="error" id="signin-error" hidden></p>
   </section>
 
-  <!-- Who is live -->
-  <section class="screen list" id="list" hidden>
+  <!-- The tabs: Live, Continue, VODs, Schedule, Channels -->
+  <section class="screen main" id="main" hidden>
     <header class="bar">
-      <h2>Live</h2>
-      <span class="pill live" id="n-live"></span>
-      <span class="bar-note" id="list-note"></span>
-      <button class="ib" id="b-refresh" aria-label="Check now"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
-      <button class="me" id="b-me" aria-label="Account"><span class="av" id="me-av"></span></button>
+      <h2 id="t-title">Live</h2>
+      <span class="pill" id="t-pill"></span>
+      <span class="bar-note" id="t-note"></span>
+      <button class="ib" id="b-refresh" aria-label="Check now"></button>
+      <button class="me" id="b-me" aria-label="Settings"><span class="av" id="me-av"></span></button>
     </header>
-    <div class="menu" id="menu" hidden>
-      <div class="menu-who" id="menu-who"></div>
-      <button class="menu-item" id="b-signout">Sign out</button>
-    </div>
-    <main class="rows" id="rows"></main>
+    <main class="rows" id="view"></main>
+    <nav class="tabs" id="tabs"></nav>
   </section>
 
   <!-- Watching: the video is above this page, this is what sits under it -->
   <section class="screen watch" id="watch" hidden>
     <header class="bar wbar">
-      <button class="ib" id="b-back" aria-label="Back to the list"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <button class="ib" id="b-back" aria-label="Back"></button>
       <span class="av" id="w-av"></span>
       <div class="w-text">
         <div class="w-name"><span id="w-name"></span><span class="w-up" id="w-up"></span></div>
@@ -52,14 +49,28 @@
       <span class="c-rate" id="c-rate"></span>
     </header>
     <div class="w-title" id="w-title"></div>
+    <div class="w-acts" id="w-acts"></div>
+    <!-- live: chat -->
     <div class="c-state" id="c-state"></div>
     <main class="msgs" id="msgs"></main>
     <button class="below" id="below" hidden>More messages below</button>
     <form class="compose" id="compose" hidden autocomplete="off"><input id="say" maxlength="500" placeholder="Send a message" enterkeyhint="send" /><button type="submit" class="send">Chat</button></form>
     <div class="compose-off" id="compose-off">Read-only chat.</div>
+    <!-- a past broadcast: where you are in it, and more from the channel -->
+    <main class="rows vodpane" id="vodpane"></main>
   </section>
 
+  <!-- Settings -->
+  <section class="screen settings" id="settings" hidden>
+    <header class="bar wbar"><button class="ib" id="b-settings-back" aria-label="Back"></button><h2>Settings</h2></header>
+    <main class="rows pad" id="settings-body"></main>
+  </section>
+
+  <div class="sheet-wrap" id="sheet" hidden><div class="sheet" id="sheet-box"></div></div>
+  <div class="snack" id="snack" hidden></div>
+
   <script src="core.js"></script>
+  <script src="data.js"></script>
   <script src="chat.js"></script>
   <script src="app.js"></script>
 </body>

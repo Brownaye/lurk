@@ -68,6 +68,7 @@ public class MainActivity extends Activity {
     private boolean watching;
     private boolean authMode;
     private String authUrl = "";
+    private volatile boolean cleanPlayer = true;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -172,7 +173,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                if (url != null && url.startsWith("https://player.twitch.tv/")) {
+                if (cleanPlayer && url != null && url.startsWith("https://player.twitch.tv/")) {
                     view.evaluateJavascript("(() => { if (document.getElementById('tp-clean')) return; const s = document.createElement('style');"
                             + " s.id = 'tp-clean'; s.textContent = " + JSONObject.quote(CLEAN_CSS) + "; document.head.appendChild(s); })()", null);
                 }
@@ -408,6 +409,33 @@ public class MainActivity extends Activity {
         public void openExternal(final String url) {
             if (url == null || !url.startsWith("https://")) return;
             main.post(() -> MainActivity.this.openExternal(url));
+        }
+
+        // Where the video is: answers through window.__native.sampled with the position, length, whether it is
+        // paused and its ready state as a JSON string, or null when there is no video on the page.
+        @JavascriptInterface
+        public void sample() {
+            main.post(() -> {
+                if (!watching || authMode) return;
+                player.evaluateJavascript("(() => { const v = document.querySelector('video'); return v ? JSON.stringify({ t: v.currentTime,"
+                        + " d: v.duration, paused: v.paused, ready: v.readyState }) : null; })()",
+                        value -> js("window.__native && window.__native.sampled && window.__native.sampled(" + (value == null ? "null" : value) + ")"));
+            });
+        }
+
+        // Settings > Player: whether Twitch's title bar over the video is hidden. Applies from the next stream opened.
+        @JavascriptInterface
+        public void setClean(boolean on) {
+            cleanPlayer = on;
+        }
+
+        @JavascriptInterface
+        public String version() {
+            try {
+                return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            } catch (Exception e) {
+                return "";
+            }
         }
 
         // Signing out: the player forgets its Twitch login too.

@@ -11,8 +11,8 @@ android {
         minSdk 30
         // 34, not 35: keeps the system bars outside the app's area without edge-to-edge inset handling.
         targetSdk 34
-        versionCode 10000
-        versionName '1.0.0'
+        versionCode 10100
+        versionName '1.1.0'
     }
 
     compileOptions {
