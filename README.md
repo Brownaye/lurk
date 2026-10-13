@@ -5,12 +5,12 @@ companion to [Twitch Desktop](https://github.com/Brownaye/twitch-desktop) and si
 
 Unofficial. Not affiliated with or endorsed by Twitch.
 
-![Opening a stream, then swiping between live channels](docs/swipe.gif)
+<p align="center">
+  <img src="docs/hero.gif" width="762" alt="Opening a stream, then swiping between live channels">
+</p>
 
-<p>
-  <img src="docs/live.png" width="270" alt="The Live tab: who is live, then everyone offline">
-  <img src="docs/watch.png" width="270" alt="Watching a stream with chat underneath">
-  <img src="docs/vods.png" width="270" alt="The VODs tab: past broadcasts by day">
+<p align="center">
+  <img src="docs/screens.png" width="100%" alt="Three screens: the Live tab, watching a stream with chat, and the VODs tab">
 </p>
 
 ## What it does
