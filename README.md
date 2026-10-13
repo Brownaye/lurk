@@ -5,6 +5,14 @@ companion to [Twitch Desktop](https://github.com/Brownaye/twitch-desktop) and si
 
 Unofficial. Not affiliated with or endorsed by Twitch.
 
+![Opening a stream, then swiping between live channels](docs/swipe.gif)
+
+<p>
+  <img src="docs/live.png" width="270" alt="The Live tab: who is live, then everyone offline">
+  <img src="docs/watch.png" width="270" alt="Watching a stream with chat underneath">
+  <img src="docs/vods.png" width="270" alt="The VODs tab: past broadcasts by day">
+</p>
+
 ## What it does
 
 - **Live.** The channels you follow that are live, with thumbnail, title, category, viewers and uptime, then
