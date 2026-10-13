@@ -54,7 +54,14 @@ Android 11 or newer.
 
 With the phone plugged in to a computer instead: `adb install -r lurk.apk`.
 
-There is no auto-update. To update, install the newer APK over the old one; your sign-in and history stay.
+The app does not update itself. Either install each newer APK over the old one (your sign-in and history stay), or
+let [Obtainium](https://obtainium.imranr.dev/) do it: it installs Lurk straight from this page and keeps it up to
+date.
+
+<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.brownaye.lurk%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FBrownaye%2Flurk%22%2C%22author%22%3A%22Brownaye%22%2C%22name%22%3A%22Lurk%22%7D"><img src="docs/badge_obtainium.png" height="48" alt="Get it on Obtainium"></a>
+
+The badge opens Obtainium with Lurk filled in (through Obtainium's own redirect page). Or, in Obtainium, choose
+Add App and paste `https://github.com/Brownaye/lurk`.
 
 ## Privacy
 
