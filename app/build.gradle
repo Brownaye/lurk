@@ -1,0 +1,27 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.brownaye.twitchpocket'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.brownaye.twitchpocket'
+        minSdk 30
+        // 34, not 35: keeps the system bars outside the app's area without edge-to-edge inset handling.
+        targetSdk 34
+        versionCode 10000
+        versionName '1.0.0'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}

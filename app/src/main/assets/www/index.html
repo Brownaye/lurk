@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Twitch Pocket</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <!-- Signed out -->
+  <section class="screen signin" id="signin" hidden>
+    <svg class="logo" viewBox="0 0 24 24"><path d="M4 3h17v11.5l-5 5h-4l-3 3H6.5v-3H2V6.5z" fill="#9146ff"/><path d="M6 5v11h3.5v2.6L12.1 16H16l3-3V5z" fill="#0e0e10"/><path d="M11 8h1.8v4.5H11zM15 8h1.8v4.5H15z" fill="#9146ff"/></svg>
+    <h1>Twitch Pocket</h1>
+    <p class="muted">The channels you follow, who is live, and chat. Sign in with your Twitch account to start.</p>
+    <button class="btn primary" id="b-signin">Sign in with Twitch</button>
+    <div class="pending" id="pending" hidden>
+      <p class="muted">Waiting for Twitch. If the page asks for a code, it is:</p>
+      <div class="code" id="pending-code"></div>
+      <div class="row">
+        <button class="btn" id="b-reopen">Open the sign-in page</button>
+        <button class="btn ghost" id="b-cancel">Cancel</button>
+      </div>
+    </div>
+    <p class="error" id="signin-error" hidden></p>
+  </section>
+
+  <!-- Who is live -->
+  <section class="screen list" id="list" hidden>
+    <header class="bar">
+      <h2>Live</h2>
+      <span class="pill live" id="n-live"></span>
+      <span class="bar-note" id="list-note"></span>
+      <button class="ib" id="b-refresh" aria-label="Check now"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+      <button class="me" id="b-me" aria-label="Account"><span class="av" id="me-av"></span></button>
+    </header>
+    <div class="menu" id="menu" hidden>
+      <div class="menu-who" id="menu-who"></div>
+      <button class="menu-item" id="b-signout">Sign out</button>
+    </div>
+    <main class="rows" id="rows"></main>
+  </section>
+
+  <!-- Watching: the video is above this page, this is what sits under it -->
+  <section class="screen watch" id="watch" hidden>
+    <header class="bar wbar">
+      <button class="ib" id="b-back" aria-label="Back to the list"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <span class="av" id="w-av"></span>
+      <div class="w-text">
+        <div class="w-name"><span id="w-name"></span><span class="w-up" id="w-up"></span></div>
+        <div class="w-sub" id="w-sub"></div>
+      </div>
+      <span class="c-rate" id="c-rate"></span>
+    </header>
+    <div class="w-title" id="w-title"></div>
+    <div class="c-state" id="c-state"></div>
+    <main class="msgs" id="msgs"></main>
+    <button class="below" id="below" hidden>More messages below</button>
+    <form class="compose" id="compose" hidden autocomplete="off"><input id="say" maxlength="500" placeholder="Send a message" enterkeyhint="send" /><button type="submit" class="send">Chat</button></form>
+    <div class="compose-off" id="compose-off">Read-only chat.</div>
+  </section>
+
+  <script src="core.js"></script>
+  <script src="chat.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
