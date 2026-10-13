@@ -6,7 +6,7 @@ companion to [Twitch Desktop](https://github.com/Brownaye/twitch-desktop) and si
 Unofficial. Not affiliated with or endorsed by Twitch.
 
 <p align="center">
-  <img src="docs/hero.gif" width="762" alt="Opening a stream, then swiping between live channels">
+  <img src="docs/hero.gif" width="762" alt="The Live list, swiping between live channels, and the Hearts card offering to switch to a channel that went live">
 </p>
 
 <p align="center">
